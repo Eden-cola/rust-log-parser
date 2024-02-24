@@ -1,6 +1,5 @@
 extern crate clap;
-
-use clap::{Arg, App};
+use clap::{Arg, Command};
 
 use std::fs::File;
 use std::io::{self, prelude::*, BufReader};
@@ -32,9 +31,12 @@ impl Expr {
         self.y = 0;
         self.buf.clear();
     }
-    fn appendFlag(&mut self, c: char) {
-        let state_len = self.states.len();
-        let state_point = StatePoint{ target: c, same_pre_index: self.x};
+    fn append_flag(&mut self, c: char) {
+        let _state_len = self.states.len();
+        let state_point = StatePoint {
+            target: c,
+            same_pre_index: self.x,
+        };
         self.states.push(state_point);
         while self.x > 0 {
             let same_pre_point = &self.states[self.x];
@@ -45,13 +47,13 @@ impl Expr {
             self.x = same_pre_point.same_pre_index;
         }
     }
-    fn appendName(&mut self, c: char) {
+    fn append_name(&mut self, c: char) {
         self.name.push(c);
     }
 
     fn is_matched(&self) -> bool {
         self.y > 0 && self.y == self.states.len()
-    } 
+    }
 
     fn feed(&mut self, c: char) -> bool {
         // println!("??? name: ({}), feed: ({}), y: ({}), len: ({})",self.name, c, self.y, self.states.len());
@@ -60,7 +62,7 @@ impl Expr {
         }
 
         self.buf.push(c);
-        if (self.states.is_empty()) {
+        if self.states.is_empty() {
             return false;
         }
         loop {
@@ -77,11 +79,11 @@ impl Expr {
         }
         self.is_matched()
     }
-    fn flag(&self) -> String {
+    fn _flag(&self) -> String {
         let mut flag = String::new();
         for point in &self.states {
             flag.push(point.target);
-        };
+        }
         flag
     }
     fn value(&self) -> String {
@@ -106,37 +108,38 @@ impl Expr {
 }
 
 fn main() -> io::Result<()> {
-    let matches = App::new("lp")
-    .version("0.0.1")
-    .author("allen eden")
-    .about("simple log file parser")
-    .arg(Arg::with_name("file")
-        .help("log file")
-        .empty_values(false)
-    )
-    .arg(Arg::with_name("expr")
-        .help("parser expr")
-        .empty_values(false)
-    )
-    .get_matches();
+    let matches = Command::new("lp")
+        .version("0.0.1")
+        .author("allen eden")
+        .about("simple log file parser")
+        .arg(
+            Arg::new("file")
+            .short('f')
+            .help("log file")
+        )
+        .arg(
+            Arg::new("expr")
+            .short('e')
+            .help("parser expr")
+        )
+        .get_matches();
 
-    let expr_str = match matches.value_of("expr") {
+    let expr_str = match matches.get_one::<String>("expr") {
         None => panic!("缺少expr"),
         Some(v) => v,
     };
-    let file_path = match matches.value_of("file") {
+    let file_path = match matches.get_one::<String>("file") {
         None => panic!("缺少file"),
         Some(v) => v,
     };
 
-    let mut expr_list = Vec::new();
-    parse_expr(expr_str, &mut expr_list);
+    let mut expr_list = parse_expr(expr_str);
     /*
     for e in &expr_list {
         println!("name:({}): flag({})", e.name, e.flag());
     }
     panic!("debug");
-    
+
     let result = parse_str(file_path, &mut expr_list);
     println!("{}", result);
     */
@@ -154,35 +157,44 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
+enum State {
+    FlagChar,
+    NameChar,
+}
 
-fn parse_expr(expr_str: &str, expr_list: &mut Vec<Expr>) {
+fn parse_expr(expr_str: &str) -> Vec<Expr> {
+    let mut expr_list = Vec::new();
     let mut expr = Expr::new();
-    let mut state = 0; // 1: 读取变量 0: 读取flag;
+    let mut state = State::FlagChar; // 1: 读取变量 0: 读取flag;
     for c in expr_str.chars() {
-        if state == 0 {
-            if c == '{' {
-                state = 1;
-                if expr.states.len() != 0 {
-                    expr_list.push(expr);
-                } else if expr_list.len() != 0 {
-                    panic!("非法的expr: 连续变量");
+        match state {
+            State::FlagChar => {
+                match c {
+                    '{' => {
+                        state = State::NameChar;
+                        if expr.states.len() != 0 {
+                            expr_list.push(expr);
+                        } else if expr_list.len() != 0 {
+                            panic!("非法的expr: 连续变量");
+                        }
+                        expr = Expr::new();
+                    }
+                    _ => expr.append_flag(c)
                 }
-                expr = Expr::new();
-            } else {
-                expr.appendFlag(c);
             }
-        } else {
-            if c == '}' {
-                state = 0;
-            } else {
-                expr.appendName(c);
+            State::NameChar => {
+                match c {
+                    '}' => state = State::FlagChar,
+                    _ => expr.append_name(c),
+                }
             }
         }
-    };
-    if state == 1 {
+    }
+    if let State::NameChar = state {
         panic!("非法的expr: 未正确结尾");
     }
     expr_list.push(expr);
+    expr_list
 }
 
 fn parse_str(line: &str, expr_list: &mut Vec<Expr>) -> String {
@@ -193,9 +205,10 @@ fn parse_str(line: &str, expr_list: &mut Vec<Expr>) -> String {
 
     let mut i = 0;
 
-    let mut expr = match expr_list.get_mut(i) {
-        None => panic!("invalid index"),
-        Some(expr) => expr,
+    let mut expr = if let Some(expr) = expr_list.get_mut(i) {
+        expr
+    } else {
+        panic!("invalid index!")
     };
     // println!("try match {}", expr.name);
 
