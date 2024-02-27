@@ -184,28 +184,20 @@ fn parse_expr(expr_str: &str) -> Vec<Expr> {
     let mut state = State::FlagChar; // 1: 读取变量 0: 读取flag;
 
     for c in expr_str.chars() {
-        match state {
-            State::FlagChar => {
-                match c {
-                    '{' => {
-                        state = State::NameChar;
-                        if expr.states.len() != 0 {
-                            expr_list.push(expr);
-                        } else if expr_list.len() != 0 {
-                            panic!("非法的expr: 连续变量");
-                        }
-                        expr = Expr::new();
-                    }
-                    _ => expr.append_flag(c)
-                }
+        let expr_to_save: Option<Expr>;
+        (state, expr, expr_to_save) = match (&state, c) {
+            (&State::FlagChar, '{') => (State::NameChar, Expr::new(), Some(expr)),
+            (&State::FlagChar, c) => { expr.append_flag(c); (State::FlagChar, expr, None) },
+            (&State::NameChar, '}') => (State::FlagChar, expr, None),
+            (&State::NameChar, c) => { expr.append_name(c); (State::NameChar, expr, None)},
+        };
+        if let Some(expr_to_save) = expr_to_save {
+            if expr_to_save.states.len() != 0 {
+                expr_list.push(expr_to_save);
+            } else if expr_list.len() != 0 {
+                panic!("非法的expr: 连续变量");
             }
-            State::NameChar => {
-                match c {
-                    '}' => state = State::FlagChar,
-                    _ => expr.append_name(c),
-                }
-            }
-        }
+        };
     }
     if let State::NameChar = state {
         panic!("非法的expr: 未正确结尾");
